@@ -68,6 +68,14 @@ async def cmd_list(message: types.Message):
     lines = [f"{item['category']}: {item['amount']}" for item in expenses]
     await message.answer("\n".join(lines))
 
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    await message.answer(
+        "/add — add expense\n"
+        "/list — show all expenses\n"
+        "/total — show total sum"
+    )
+
 @dp.message(Command("add"))
 #add new element to expenses
 async def cmd_add(message: types.Message, state: FSMContext) -> None:
