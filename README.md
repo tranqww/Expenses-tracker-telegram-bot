@@ -19,6 +19,7 @@ Built with [aiogram 3](https://docs.aiogram.dev/) and stores data locally in a J
 | `/add`   | Starts a conversation to add a new expense         |
 | `/list`  | Shows every recorded expense and its category      |
 | `/total` | Calculates and shows the total amount spent        |
+| `/help`  | Show all commands                                  |
 
 ## Requirements
 
