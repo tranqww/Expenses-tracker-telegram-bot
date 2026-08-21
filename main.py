@@ -1,6 +1,6 @@
 import asyncio  # noqa: I001
 import os
-import json
+import sqlite3
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -10,34 +10,26 @@ from aiogram.fsm.context import FSMContext
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FILE_PATH = os.path.join(BASE_DIR, "expenses.json")
+FILE_PATH = os.path.join(BASE_DIR, "expenses.db")
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
-
-def expenses_calculate():
-    #calculating total amount of expenses
-    total = 0
-    for item in expenses:
-        total += item["amount"]
-    return total
 
 if not TOKEN:
     raise ValueError("BOT_TOKEN is not set")
 
-try:
-    
-    with open(FILE_PATH, "r", encoding = "utf-8") as file:
-        expenses = json.load(file)
-        print("File has been loaded.")
-except FileNotFoundError as e:
-    print(f"File is not created! Creating...\n{e}")
-    expenses = []
-    with open(FILE_PATH, "w", encoding = "utf-8") as file:
-        json.dump(expenses, file, ensure_ascii=False, indent=2)
-        print("File has been created.")
-except json.JSONDecodeError as e:
-    print(f"JSON decode error: {e}")
-    expenses = []
+#database
+conn = sqlite3.connect(FILE_PATH)
+cursor = conn.cursor()
+
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        amount REAL NOT NULL
+    )
+""")
+conn.commit()
 
 class Form(StatesGroup):
     category = State()
@@ -56,16 +48,25 @@ async def cmd_start(message: types.Message):
 #total command, calculating total sum of expenses what user gave
 async def cmd_total(message: types.Message):
     await message.answer("Calculating...")
-    await message.answer(f"Total: {expenses_calculate()}")
+    cursor.execute("SELECT SUM(amount) FROM expenses WHERE user_id = ?", (message.from_user.id,)) # type: ignore
+    total = cursor.fetchone()[0]
+    if total is None:
+        await message.answer("0")
+    else:
+        await message.answer(f"Total: {total}")
 
 @dp.message(Command("list"))
 #showing all categories, and how much lost on it
 async def cmd_list(message: types.Message):
     await message.answer("Exploring...")
+    cursor.execute("SELECT category, amount FROM expenses WHERE user_id = ?", (message.from_user.id,)) # type: ignore
+    expenses = cursor.fetchall()
     if not expenses:
         await message.answer("List is empty!")
         return
-    lines = [f"{item['category']}: {item['amount']}" for item in expenses]
+    lines = []
+    for category, amount in expenses:
+        lines.append(f"{category}: {amount}")
     await message.answer("\n".join(lines))
 
 @dp.message(Command("help"))
@@ -93,16 +94,13 @@ async def state_amount(message: types.Message, state: FSMContext) -> None:
     try:
         await state.update_data(amount=float(message.text)) # type: ignore
         data = await state.get_data()
-        print(data)
+        data["user_id"] = message.from_user.id # pyright: ignore[reportOptionalMemberAccess]     
     except ValueError:
         await message.answer("Please, input an valid amount:")
         return
-    global expenses  # noqa: PLW0602
-    expenses.append(data)
-    with open(FILE_PATH, "w", encoding = "utf-8") as file:  # noqa: ASYNC230
-        json.dump(expenses, file, ensure_ascii=False, indent=2)
-        print("File has been changed.")
-        await message.answer("Expense has been successfully added!")
+    cursor.execute("INSERT INTO expenses (user_id, category, amount) VALUES (?, ?, ?)", (data["user_id"], data["category"], data["amount"]))
+    conn.commit()
+    await message.answer("Expense has been successfully added!")
     await state.clear()
 
 async def main():
